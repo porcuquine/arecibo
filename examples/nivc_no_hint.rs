@@ -42,27 +42,21 @@ impl<F: PrimeField + PrimeFieldBits> StepCircuit<F> for SHACircuit<F> {
 
     let digest = pack_bits(cs.namespace(|| "digest_from_bits"), &digest_bits)?;
 
-    let new_pc = digest_bits[0].get_value().map(|bit| {
-      let new_pc = if bit {
-        AllocatedNum::alloc(cs.namespace(|| "sha_branch"), || Ok(F::ONE))
-      } else {
-        AllocatedNum::alloc(cs.namespace(|| "blake_branch"), || Ok(F::ZERO))
-      }
-      .unwrap();
-      cs.enforce(
-        || "enforce new_pc",
-        |lc| lc + CS::one(),
-        |lc| lc + new_pc.get_variable(),
-        |_lc| digest_bits[0].lc(CS::one(), F::ONE),
-      );
-      new_pc
-    });
+    let new_pc = AllocatedNum::alloc(&mut cs.namespace(|| "new_pc"), || {
+      digest_bits[0]
+        .get_value()
+        .map(|bit| if bit { F::ONE } else { F::ZERO })
+        .ok_or(SynthesisError::AssignmentMissing)
+    })?;
 
-    if _pc.is_some() {
-      assert!(new_pc.is_some())
-    }
+    cs.enforce(
+      || "enforce new_pc",
+      |lc| lc + CS::one(),
+      |lc| lc + new_pc.get_variable(),
+      |_lc| digest_bits[0].lc(CS::one(), F::ONE),
+    );
 
-    Ok((new_pc, vec![digest]))
+    Ok((Some(new_pc), vec![digest]))
   }
 }
 
@@ -91,27 +85,21 @@ impl<F: PrimeField + PrimeFieldBits> StepCircuit<F> for BlakeCircuit<F> {
 
     let digest = pack_bits(cs.namespace(|| "digest_from_bits"), &digest_bits)?;
 
-    let new_pc = digest_bits[0].get_value().map(|bit| {
-      let new_pc = if bit {
-        AllocatedNum::alloc(cs.namespace(|| "sha_branch"), || Ok(F::ONE))
-      } else {
-        AllocatedNum::alloc(cs.namespace(|| "blake_branch"), || Ok(F::ZERO))
-      }
-      .unwrap();
-      cs.enforce(
-        || "enforce new_pc",
-        |lc| lc + CS::one(),
-        |lc| lc + new_pc.get_variable(),
-        |_lc| digest_bits[0].lc(CS::one(), F::ONE),
-      );
-      new_pc
-    });
+    let new_pc = AllocatedNum::alloc(&mut cs.namespace(|| "new_pc"), || {
+      digest_bits[0]
+        .get_value()
+        .map(|bit| if bit { F::ONE } else { F::ZERO })
+        .ok_or(SynthesisError::AssignmentMissing)
+    })?;
 
-    if _pc.is_some() {
-      assert!(new_pc.is_some())
-    }
+    cs.enforce(
+      || "enforce new_pc",
+      |lc| lc + CS::one(),
+      |lc| lc + new_pc.get_variable(),
+      |_lc| digest_bits[0].lc(CS::one(), F::ONE),
+    );
 
-    Ok((new_pc, vec![digest]))
+    Ok((Some(new_pc), vec![digest]))
   }
 }
 
