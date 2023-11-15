@@ -72,21 +72,43 @@ impl<G: Group> SumcheckProof<G> {
   {
     let len = poly_A.len() / 2;
     (0..len)
-      .into_par_iter()
-      .map(|i| {
-        // eval 0: bound_func is A(low)
-        let eval_point_0 = comb_func(&poly_A[i], &poly_B[i]);
+            .into_par_iter()
+            .map(|i| {
+                // This `map` function computes point-wise combinations (via `comb_func`) of the evals of each
+                // polynomial -- as though the 'top var' (next to be bound in sumcheck) have been bound to the target.
+                //
+                // The target is the evaluation that will be used to create a univariate-polynomial whose evaluation at
+                // the target is the sum of the combined non-top evaluations.
+                //
+                // The following `reduce `operation effects the sum.
+                //
+                // The required targets are the evaluation points 0 and 2.
+                //
+                // Evaluation at 0 is unaffected by the top var (to be bound).
+                // eval 0: bound_func is A(low)
+                let eval_point_0 = comb_func(&poly_A[i], &poly_B[i]);
 
-        // eval 2: bound_func is -A(low) + 2*A(high)
-        let poly_A_bound_point = poly_A[len + i] + poly_A[len + i] - poly_A[i];
-        let poly_B_bound_point = poly_B[len + i] + poly_B[len + i] - poly_B[i];
-        let eval_point_2 = comb_func(&poly_A_bound_point, &poly_B_bound_point);
-        (eval_point_0, eval_point_2)
-      })
-      .reduce(
-        || (G::Scalar::ZERO, G::Scalar::ZERO),
-        |a, b| (a.0 + b.0, a.1 + b.1),
-      )
+                // eval 2: bound_func is -A(low) + 2*A(high) = A(low) + t*(A(high) - A(low)), t = 2
+                // See comments in `bind_poly_var_top()` for more detail on this expression.
+                // Here, we want t=2 because we are looking for the evaluation at the point 2.
+                //
+                // What we are actually doing is binding the top var to 2 (as per `bind_poly_var_top`) and performing
+                // pointwise-combining the evaluations of the lower vars, for reasons described above.
+                let poly_A_bound_to_point = poly_A[len + i] + poly_A[len + i] - poly_A[i];
+                let poly_B_bound_to_point = poly_B[len + i] + poly_B[len + i] - poly_B[i];
+                let eval_point_2 = comb_func(&poly_A_bound_to_point, &poly_B_bound_to_point);
+                (eval_point_0, eval_point_2)
+            })
+        // As a sanity check, note that when `comb_func` is multiplication, the final results are evaluation points at 0
+        // and 2 for a univariate polynomial representing the inner product of `poly_A` and `poly_B` with the top var
+        // bound to a point. This is the expected result in the sumcheck for the sumcheck protocol's core operation.
+        //
+        // More generally, the resulting `UniPoly` is equal to the notional comb_A_B = comb_func(poly_A, poly_B) such
+        // that the univariate polylnomial U(t) == comb_A_B(t) for any t.
+            .reduce(
+                || (G::Scalar::ZERO, G::Scalar::ZERO),
+                |a, b| (a.0 + b.0, a.1 + b.1),
+            )
   }
 
   pub fn prove_quad<F>(
@@ -123,10 +145,10 @@ impl<G: Group> SumcheckProof<G> {
       // Set up next round
       claim_per_round = poly.evaluate(&r_i);
 
-      // bound all tables to the verifier's challenege
+      // bind all evaluation tables to the verifier's challenge
       rayon::join(
-        || poly_A.bound_poly_var_top(&r_i),
-        || poly_B.bound_poly_var_top(&r_i),
+        || poly_A.bind_top_var(&r_i),
+        || poly_B.bind_top_var(&r_i),
       );
     }
 
@@ -175,14 +197,14 @@ impl<G: Group> SumcheckProof<G> {
       let r_i = transcript.squeeze(b"c")?;
       r.push(r_i);
 
-      // bound all tables to the verifier's challenge
+      // bind all tables to the verifier's challenge
       poly_A_vec
         .par_iter_mut()
         .zip(poly_B_vec.par_iter_mut())
         .for_each(|(poly_A, poly_B)| {
           let _ = rayon::join(
-            || poly_A.bound_poly_var_top(&r_i),
-            || poly_B.bound_poly_var_top(&r_i),
+            || poly_A.bind_top_var(&r_i),
+            || poly_B.bind_top_var(&r_i),
           );
         });
 
@@ -215,23 +237,23 @@ impl<G: Group> SumcheckProof<G> {
         let eval_point_0 = comb_func(&poly_A[i], &poly_B[i], &poly_C[i]);
 
         // eval 2: bound_func is -A(low) + 2*A(high)
-        let poly_A_bound_point = poly_A[len + i] + poly_A[len + i] - poly_A[i];
-        let poly_B_bound_point = poly_B[len + i] + poly_B[len + i] - poly_B[i];
-        let poly_C_bound_point = poly_C[len + i] + poly_C[len + i] - poly_C[i];
+        let poly_A_bound_to_point = poly_A[len + i] + poly_A[len + i] - poly_A[i];
+        let poly_B_bound_to_point = poly_B[len + i] + poly_B[len + i] - poly_B[i];
+        let poly_C_bound_to_point = poly_C[len + i] + poly_C[len + i] - poly_C[i];
         let eval_point_2 = comb_func(
-          &poly_A_bound_point,
-          &poly_B_bound_point,
-          &poly_C_bound_point,
+          &poly_A_bound_to_point,
+          &poly_B_bound_to_point,
+          &poly_C_bound_to_point,
         );
 
         // eval 3: bound_func is -2A(low) + 3A(high); computed incrementally with bound_func applied to eval(2)
-        let poly_A_bound_point = poly_A_bound_point + poly_A[len + i] - poly_A[i];
-        let poly_B_bound_point = poly_B_bound_point + poly_B[len + i] - poly_B[i];
-        let poly_C_bound_point = poly_C_bound_point + poly_C[len + i] - poly_C[i];
+        let poly_A_bound_to_point = poly_A_bound_to_point + poly_A[len + i] - poly_A[i];
+        let poly_B_bound_to_point = poly_B_bound_to_point + poly_B[len + i] - poly_B[i];
+        let poly_C_bound_to_point = poly_C_bound_to_point + poly_C[len + i] - poly_C[i];
         let eval_point_3 = comb_func(
-          &poly_A_bound_point,
-          &poly_B_bound_point,
-          &poly_C_bound_point,
+          &poly_A_bound_to_point,
+          &poly_B_bound_to_point,
+          &poly_C_bound_to_point,
         );
         (eval_point_0, eval_point_2, eval_point_3)
       })
@@ -260,27 +282,27 @@ impl<G: Group> SumcheckProof<G> {
         let eval_point_0 = comb_func(&poly_A[i], &poly_B[i], &poly_C[i], &poly_D[i]);
 
         // eval 2: bound_func is -A(low) + 2*A(high)
-        let poly_A_bound_point = poly_A[len + i] + poly_A[len + i] - poly_A[i];
-        let poly_B_bound_point = poly_B[len + i] + poly_B[len + i] - poly_B[i];
-        let poly_C_bound_point = poly_C[len + i] + poly_C[len + i] - poly_C[i];
-        let poly_D_bound_point = poly_D[len + i] + poly_D[len + i] - poly_D[i];
+        let poly_A_bound_to_point = poly_A[len + i] + poly_A[len + i] - poly_A[i];
+        let poly_B_bound_to_point = poly_B[len + i] + poly_B[len + i] - poly_B[i];
+        let poly_C_bound_to_point = poly_C[len + i] + poly_C[len + i] - poly_C[i];
+        let poly_D_bound_to_point = poly_D[len + i] + poly_D[len + i] - poly_D[i];
         let eval_point_2 = comb_func(
-          &poly_A_bound_point,
-          &poly_B_bound_point,
-          &poly_C_bound_point,
-          &poly_D_bound_point,
+          &poly_A_bound_to_point,
+          &poly_B_bound_to_point,
+          &poly_C_bound_to_point,
+          &poly_D_bound_to_point,
         );
 
         // eval 3: bound_func is -2A(low) + 3A(high); computed incrementally with bound_func applied to eval(2)
-        let poly_A_bound_point = poly_A_bound_point + poly_A[len + i] - poly_A[i];
-        let poly_B_bound_point = poly_B_bound_point + poly_B[len + i] - poly_B[i];
-        let poly_C_bound_point = poly_C_bound_point + poly_C[len + i] - poly_C[i];
-        let poly_D_bound_point = poly_D_bound_point + poly_D[len + i] - poly_D[i];
+        let poly_A_bound_to_point = poly_A_bound_to_point + poly_A[len + i] - poly_A[i];
+        let poly_B_bound_to_point = poly_B_bound_to_point + poly_B[len + i] - poly_B[i];
+        let poly_C_bound_to_point = poly_C_bound_to_point + poly_C[len + i] - poly_C[i];
+        let poly_D_bound_to_point = poly_D_bound_to_point + poly_D[len + i] - poly_D[i];
         let eval_point_3 = comb_func(
-          &poly_A_bound_point,
-          &poly_B_bound_point,
-          &poly_C_bound_point,
-          &poly_D_bound_point,
+          &poly_A_bound_to_point,
+          &poly_B_bound_to_point,
+          &poly_C_bound_to_point,
+          &poly_D_bound_to_point,
         );
         (eval_point_0, eval_point_2, eval_point_3)
       })
@@ -327,7 +349,7 @@ impl<G: Group> SumcheckProof<G> {
       // append the prover's message to the transcript
       transcript.absorb(b"p", &poly);
 
-      //derive the verifier's challenge for the next round
+      // derive the verifier's challenge for the next round
       let r_i = transcript.squeeze(b"c")?;
       r.push(r_i);
       polys.push(poly.compress());
@@ -335,18 +357,18 @@ impl<G: Group> SumcheckProof<G> {
       // Set up next round
       claim_per_round = poly.evaluate(&r_i);
 
-      // bound all tables to the verifier's challenge
+      // bind all tables to the verifier's challenge
       rayon::join(
         || {
           rayon::join(
-            || poly_A.bound_poly_var_top(&r_i),
-            || poly_B.bound_poly_var_top(&r_i),
+            || poly_A.bind_top_var(&r_i),
+            || poly_B.bind_top_var(&r_i),
           )
         },
         || {
           rayon::join(
-            || poly_C.bound_poly_var_top(&r_i),
-            || poly_D.bound_poly_var_top(&r_i),
+            || poly_C.bind_top_var(&r_i),
+            || poly_D.bind_top_var(&r_i),
           )
         },
       );
