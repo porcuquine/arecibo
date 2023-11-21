@@ -99,7 +99,7 @@ impl<G: Group, EE: EvaluationEngineTrait<G>> BatchedRelaxedR1CSSNARKTrait<G>
 
   fn setup(
     ck: &CommitmentKey<G>,
-    S: &[R1CSShape<G>],
+    S: &[&R1CSShape<G>],
   ) -> Result<(Self::ProverKey, Self::VerifierKey), NovaError> {
     let (pk_ee, vk_ee) = EE::setup(ck);
 
@@ -118,7 +118,7 @@ impl<G: Group, EE: EvaluationEngineTrait<G>> BatchedRelaxedR1CSSNARKTrait<G>
   fn prove(
     ck: &CommitmentKey<G>,
     pk: &Self::ProverKey,
-    S: &[R1CSShape<G>],
+    S: &[&R1CSShape<G>],
     U: &[RelaxedR1CSInstance<G>],
     W: &[RelaxedR1CSWitness<G>],
   ) -> Result<Self, NovaError> {

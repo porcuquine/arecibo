@@ -80,14 +80,14 @@ pub trait BatchedRelaxedR1CSSNARKTrait<G: Group>:
   /// TODO: Doc
   fn setup(
     ck: &CommitmentKey<G>,
-    S: &[R1CSShape<G>],
+    S: &[&R1CSShape<G>],
   ) -> Result<(Self::ProverKey, Self::VerifierKey), NovaError>;
 
   /// TODO: Doc
   fn prove(
     ck: &CommitmentKey<G>,
     pk: &Self::ProverKey,
-    S: &[R1CSShape<G>],
+    S: &[&R1CSShape<G>],
     U: &[RelaxedR1CSInstance<G>],
     W: &[RelaxedR1CSWitness<G>],
   ) -> Result<Self, NovaError>;
